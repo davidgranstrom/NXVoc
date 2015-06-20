@@ -34,30 +34,28 @@ PSP296.gui(~synth);
     q.env_decay_time = 0.04;
 
     // freqs from buchla programmable spectral processsor model 296
-    q.freqs = #[ 110, 150, 250, 350, 500, 630, 800, 1000, 1300, 1600, 2000, 2600, 3500, 5000, 8000, 10000 ];
+    // q.freqs = #[ 110, 150, 250, 350, 500, 630, 800, 1000, 1300, 1600, 2000, 2600, 3500, 5000, 8000, 10000 ];
 
-    q.init = {|self|
-        self.vocoder();
-    };
+    // q.makeGui = {|self, aSynth|
+    //     aSynth.set(\)
+    // };
 
-    q.envelope_follower = {|self, input, in_select=0, env_decay_time=0.04|
-        var encoder, enc_even, enc_odd;
-        encoder = q.freqs.collect {|freq| 
-            Amplitude.ar(10 * BPF.ar(input, freq, q.rq), 0.05) 
+    // internal use only
+    q.signal_input = {|self, freqs, input, in_select=0|
+        var bands, even, odd;
+        bands = freqs.collect {|freq| 
+            10 * BPF.ar(input, freq, q.rq)
         };
-        enc_even = encoder.select {|x,i| i.even };
-        enc_odd  = encoder.select {|x,i| i.odd  };
-        encoder  = Select.ar(in_select, [ encoder, enc_even, enc_odd ]);
-        encoder;
+        even  = bands.select {|x,i| i.even };
+        odd   = bands.select {|x,i| i.odd  };
+        bands = Select.ar(in_select, [ bands, even, odd ]);
+        bands;
     };
 
-    q.decoder = {|self, input, in_select=0, out_select=0|
-        var envs = self.envelope_follower(input, in_select);
-        // these should be args..
-        var band_amps = q.freqs.size.collect {|i| NamedControl.ar("band%_amp".format(i+1).asSymbol, 1, 0.1) }; // lag time?
+    // internal use only
+    q.decoder = {|self, freqs, amps, input, in_select=0, out_select=0|
         var decoder, dec_even, dec_odd;
-        // TODO: factor out band_amps
-        decoder  = [ q.freqs, band_amps ].flopWith {|freq, amp| 
+        decoder = [ freqs, amps ].flopWith {|freq, amp| 
             amp * 10 * BPF.ar(input, freq, q.rq) 
         };
         dec_even = decoder.select {|x,i| i.even };
@@ -66,116 +64,159 @@ PSP296.gui(~synth);
         decoder;
     };
 
-    q.eq = {|self, input, in_select=0, out_select=0|
-        self.decoder(input, in_select, out_select).sum;
+    q.envelope_follower = {|self, freqs, input, in_select=0, env_decay_time=0.04|
+        var signal  = self.signal_input(freqs, input, in_select);
+        var encoder = signal.collect {|sig|
+            Amplitude.ar(sig, 0.01, env_decay_time); 
+        };
+        encoder;
     };
 
-    q.vocoder = {|self, modulator, carrier, in_select=0, out_select=0|
-        var envs = self.envelope_follower(modulator, in_select);
-        var eq   = self.decoder(carrier, out_select);
-        var sig = eq * envs;
-        sig.sum;
+    q.attenuator = {|self, freqs, amps, input, in_select=0, out_select=0|
+        var bands, even, odd;
+        var signal = self.signal_input(freqs, input, in_select);
+        bands = [ signal, amps ].flopWith {|sig, amp| sig * amp };
+        even  = bands.select {|x,i| i.even };
+        odd   = bands.select {|x,i| i.odd  };
+        bands = Select.ar(out_select, [ bands, even, odd ]);
+        bands;
     };
 
-    q.comb = {|self, input|
-        var eq = self.eq(input);
-        eq.sum;
+    q.vocoder = {|self, freqs, amps, modulator, carrier, in_select=0, out_select=0|
+        var envs = self.envelope_follower(freqs, modulator, in_select);
+        var decode = self.decoder(freqs, amps, carrier, out_select);
+        (decode * envs).sum;
     };
 
-s.waitForBoot {
-    var buf = ~speech.choose;
-
-    ~speech ?? {
-        ~speech = AudioFileLib("~/audio/speech");
-        ~speech = ~speech.libraryWithBuffers;
-        s.sync;
+    q.comb = {|self, freqs, input, in_select=0, out_select=0|
+        var bands, even, odd;
+        bands = self.signal_input(freqs, input, in_select);
+        even  = bands.select {|x,i| i.even };
+        odd   = bands.select {|x,i| i.odd  };
+        bands = Select.ar(out_select, [ even, odd ]);
+        bands;
     };
 
-    buf = ~speech['speech'].choose;
+    s.waitForBoot {
+        var buf;
 
-    play {
-        var mod = PlayBuf.ar(buf.numChannels, buf, BufRateScale.kr(buf), loop:1);
-        // var vocoder = q.vocoder(mod, Saw.ar(110));
-        // [ 8*q.vocoder(mod, Saw.ar(55)), 0.1*mod ];
-        // [ 8*q.vocoder(mod, Saw.ar(55)), 8*q.vocoder(mod, Saw.ar(55*1.5)) ];
-        [ q.vocoder(mod, Saw.ar(55, 0.5)), q.vocoder(mod, Saw.ar(55 * 1.5, 0.5)) ];
-    };
-};            
+        ~speech ?? {
+            ~speech = AudioFileLib("~/audio/speech");
+            ~speech = ~speech.libraryWithBuffers;
+            s.sync;
+        };
+
+        buf = ~speech['speech'].choose;
+
+        play {
+            var freqs = #[ 110, 150, 250, 350, 500, 630, 800, 1000, 1300, 1600, 2000, 2600, 3500, 5000, 8000, 10000 ];
+            var amps  = { 1 }.dup(freqs.size);
+            var mod   = PlayBuf.ar(buf.numChannels, buf, BufRateScale.kr(buf), loop:1);
+            // var vocoder = q.vocoder(mod, Saw.ar(110));
+            // [ 8*q.vocoder(mod, Saw.ar(55)), 0.1*mod ];
+            // [ 8*q.vocoder(mod, Saw.ar(55)), 8*q.vocoder(mod, Saw.ar(55*1.5)) ];
+            [ q.vocoder(freqs, amps, mod, Saw.ar(55, 0.5)), q.vocoder(freqs, amps, mod, Saw.ar(55 * 1.5, 0.5)) ];
+
+        };
+    };            
 )
 
+s.meter;
+
+x = `[ {rrand(440,880)}.dup(8), {rrand(0.1,0.5)}.dup(8) ]
+x.multichannelExpandRef(2)
+
+Klank
+
+
+(
+    var freqs = [ 200, 400, 800, 1000 ];
+    var amps  = (1..freqs.size).reciprocal;
+    PSP296.vocoder(`[ freqs, amps ], mod, car, in_select, out_select);
+)
 
 s.makeWindow
 s.meter;
 
 
+f = {|foo, bar ... band_amps|
+    // [ foo, bar, band_amps ];
+    band_amps.unbubble.collect {|amp|
+        amp.postln;
+    };
+};
+
+f.(1, 2, (1..10))
+
+
 
 14.reciprocal.sqrt
 
+
+2 ** 18
+r = Buffer.alloc(s, 2**18, 2);
+r.write("~/Desktop/vocoder_test.wav".standardizePath, "wav", "int24", 0, 0, true);
+r.close;
+
+SynthDef("help-Diskout", {arg bufnum;
+    DiskOut.ar(bufnum, In.ar(12,2));
+}).play(args:[\bufnum, r]);
+
+
+
+(88..99).do(_.even);
+
+x = ar(SinOsc);
+
+play { x * 0.1 };
+
+
+
+///////////////////////////////////////////////////////////////////////////
+
+'F1'.asNote.midicps
+
+x.set(\freq, 'E1'.asNote.midicps);
+x.set(\freq, 'F1'.asNote.midicps);
+
+x.set(\freq, 'c'.asNote.midicps);
+
+x.set(\freq, 'Eb1'.asNote.midicps);
+x.set(\freq, 'C'.asNote.midicps);
+x.set(\freq, 'G'.asNote.midicps);
+x.set(\freq, 'Bb1'.asNote.midicps);
+
+'c'.asNote.midicps
+
+s.boot;
 (
-
-    SynthDef(\psp_m296, { 
-        |
-            // input
-            in_select        = 1, // 0=even, 1=all, 2=odd
-            // attenuator
-            att_out_select = 1, // 0=even, 1=all, 2=odd
-            // comb
-            comb_out_select  = 0, // 0=even, 1=odd
-            // programmable
-            prog_out_select  = 0, // 0=even, 1=all, 2=odd
-            prog_ctl_freq    = 1, // multiplier
-            prog_ctl_width   = 1, // multiplier
-            // output
-            prog_on          = 0,
-            att_on           = 0,
-            comb_on          = 0,
-            // misc
-            env_decay_time   = 0.04,
-            gate             = 1,
-            amp              = 0.1,
-            mod_in,
-            car_in,
-            b, // just for test
-            out
-        |
-        var encoder, decoder;
-        var enc_even, enc_odd, dec_even, dec_odd;
-        var programmable, attenuator, comb, output;
-
-        // var modulator = In.ar(mod_in,2);
-        // var carrier = In.ar(car_in,2);
-        var carrier = Saw.ar(55); // this should be an arg too
-        var modulator = 3 * PlayBuf.ar(1, b, 1 * BufRateScale.kr(b), loop:1); // test
-        // freqs from buchla programmable spectral processsor model 296
-        var freqs = #[ 110, 150, 250, 350, 500, 630, 800, 1000, 1300, 1600, 2000, 2600, 3500, 5000, 8000, 10000 ];
-        var rq = 0.04;
-        // amp controls for each band
-        var band_amps = freqs.size.collect {|i| NamedControl.ar("band%_amp".format(i+1).asSymbol, 1, 0.1) }; // lag time?
-        // compress input signal?
-        // modulator = Compander.ar(modulator, modulator, -12.dbamp, 1, 1/8);
-        // modulator = Limiter.ar(5 * modulator);
-        // encoder
-        encoder = freqs.collect {|freq| 
-            Amplitude.ar(10 * BPF.ar(modulator, freq, rq), 0.05, env_decay_time) 
-        };
-        enc_even = encoder.select {|x,i| i.even };
-        enc_odd  = encoder.select {|x,i| i.odd  };
-        encoder  = Select.ar(in_select, [ enc_even, encoder, enc_odd ]);
-        // decode
-        decoder  = [ freqs, band_amps ].flopWith {|freq, amp| 
-            amp * 10 * BPF.ar(carrier, freq, rq) 
-        };
-        dec_even = decoder.select {|x,i| i.even };
-        dec_odd  = decoder.select {|x,i| i.odd  };
-        // output select
-        programmable = Select.ar(prog_out_select, [ dec_even, decoder, dec_odd ]);
-        // vocoder
-        programmable = encoder * programmable;
-        attenuator = Select.ar(att_out_select, [ dec_even, decoder, dec_odd ]);
-        comb = Select.ar(comb_out_select, [ dec_even, dec_odd ]);
-        output = [ prog_on * programmable, att_on * attenuator, comb_on * comb ].mean;
-        Out.ar(out, amp * output.sum ! 2);
-    }).add;
+    x = play {|freq=38.8908|
+        var x, o = Saw.ar(freq*[0.984,1,1.001]*[1,1,2]).mean;
+        o = o + SinOsc.ar(freq*[1,1],0,1).mean;
+        o = o + sin(1.5*o);
+        o = o + BPF.ar(o, 2*freq);
+        x = Hilbert.ar(HPF.ar(o,1*freq))[1];
+        o = RLPF.ar(o, (4*(1.5*freq)).clip(20,20000), 0.3);
+        4.do { x = AllpassN.ar(OnePole.ar(x,0.8), 1, {Rand(1e-4,0.01)}.dup, 1) };
+        o = o + x;
+        o = Compander.ar(o, LFDNoise3.ar(24), -18.dbamp, 1.0, 1/10, 0.1, 0.1);
+        o = RLPF.ar(o, 10000);
+        o = GVerb.ar(o*0.5, 85, 15); // 85
+        o = BLowShelf.ar(o, 90, 0.1, -4);
+        // o = x;
+        o = LeakDC.ar(o);
+        o = Limiter.ar(o);
+        // o = Normalizer.ar(o);
+        // o = Limiter.ar(o);
+        // o * 0.5 ! 2;
+        o * 0.5;
+    }
 )
 
+(1.5*55) * 64
 
+16*2
+s.meter;
+
+
+{ Hilbert.ar(SinOsc.ar(880)) }.plot
