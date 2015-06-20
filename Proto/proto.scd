@@ -36,10 +36,6 @@ PSP296.gui(~synth);
     // freqs from buchla programmable spectral processsor model 296
     // q.freqs = #[ 110, 150, 250, 350, 500, 630, 800, 1000, 1300, 1600, 2000, 2600, 3500, 5000, 8000, 10000 ];
 
-    // q.makeGui = {|self, aSynth|
-    //     aSynth.set(\)
-    // };
-
     // internal use only
     q.signal_input = {|self, freqs, input, in_select=0|
         var bands, even, odd;
@@ -79,13 +75,13 @@ PSP296.gui(~synth);
         even  = bands.select {|x,i| i.even };
         odd   = bands.select {|x,i| i.odd  };
         bands = Select.ar(out_select, [ bands, even, odd ]);
-        bands;
+        bands.sum * freqs.size.reciprocal.sqrt;
     };
 
     q.vocoder = {|self, freqs, amps, modulator, carrier, in_select=0, out_select=0|
         var envs = self.envelope_follower(freqs, modulator, in_select);
         var decode = self.decoder(freqs, amps, carrier, out_select);
-        (decode * envs).sum;
+        (decode * envs).sum * freqs.size.reciprocal.sqrt;
     };
 
     q.comb = {|self, freqs, input, in_select=0, out_select=0|
@@ -94,7 +90,7 @@ PSP296.gui(~synth);
         even  = bands.select {|x,i| i.even };
         odd   = bands.select {|x,i| i.odd  };
         bands = Select.ar(out_select, [ even, odd ]);
-        bands;
+        bands.sum * freqs.size.reciprocal.sqrt;
     };
 
     s.waitForBoot {
@@ -106,22 +102,47 @@ PSP296.gui(~synth);
             s.sync;
         };
 
-        buf = ~speech['speech'].choose;
+        buf = ~speech['speech'][3];
 
-        play {
+        {
             var freqs = #[ 110, 150, 250, 350, 500, 630, 800, 1000, 1300, 1600, 2000, 2600, 3500, 5000, 8000, 10000 ];
+            // var freqs = { exprand(55.0, 1000.0) }.dup(16);
             var amps  = { 1 }.dup(freqs.size);
-            var mod   = PlayBuf.ar(buf.numChannels, buf, BufRateScale.kr(buf), loop:1);
-            // var vocoder = q.vocoder(mod, Saw.ar(110));
-            // [ 8*q.vocoder(mod, Saw.ar(55)), 0.1*mod ];
-            // [ 8*q.vocoder(mod, Saw.ar(55)), 8*q.vocoder(mod, Saw.ar(55*1.5)) ];
-            [ q.vocoder(freqs, amps, mod, Saw.ar(55, 0.5)), q.vocoder(freqs, amps, mod, Saw.ar(55 * 1.5, 0.5)) ];
+            var envs, mod   = PlayBuf.ar(buf.numChannels, buf, BufRateScale.kr(buf), loop:1);
+            // test
 
-        };
+            var attenuator, vocoder, combs, pm;
+            vocoder = [ 
+                q.vocoder(freqs, amps, mod, Saw.ar(55)),
+                q.vocoder(freqs, amps, mod, Saw.ar(55 * 1.5)) 
+            ];
+
+            // 2.collect {|i| q.attenuator(freqs, amps, mod, 0, 1 + i) };
+            // 2.collect {|i| q.comb(freqs, mod, i) };
+
+            // envs = q.envelope_follower(freqs, mod);
+            // envs.size.postln;
+            // freqs.size.postln;
+            // pm = Splay.ar(
+            //     SinOsc.ar(
+            //         55,
+            //         // pi * SinOsc.ar({|i| exprand(110.0, 10000.0) }.dup(freqs.size))
+            //         pi * SinOsc.ar({|i| 1 * 55 * (i+1) }.dup(freqs.size))
+            //     ) * envs;
+            // ).mean;
+
+            // vocoder + (0.5 * pm ! 2);
+
+        }.play;
     };            
 )
 
+Quarks.gui
+~speech['speech'][3]
+
+s.makeWindow
 s.meter;
+s.plotTree
 
 x = `[ {rrand(440,880)}.dup(8), {rrand(0.1,0.5)}.dup(8) ]
 x.multichannelExpandRef(2)
