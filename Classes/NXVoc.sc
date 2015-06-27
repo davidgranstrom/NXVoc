@@ -1,4 +1,4 @@
-PSP256 {
+NXVoc {
 
     classvar rq = 0.03;
 
