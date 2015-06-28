@@ -36,8 +36,8 @@ NXVoc {
         ^bands.sum * freqs.size.reciprocal.sqrt;
     }
 
-    *vocoder {|freqs, amps, modulator, carrier, in_select=0, out_select=0|
-        var envs    = this.envelope_follower(freqs, modulator, in_select);
+    *vocoder {|freqs, amps, modulator, carrier, in_select=0, out_select=0, env_decay_time=0.04|
+        var envs    = this.envelope_follower(freqs, modulator, in_select, env_decay_time);
         var decoder = this.decoder(freqs, amps, carrier, out_select);
         ^(decoder * envs).sum * freqs.size.reciprocal.sqrt;
     }
