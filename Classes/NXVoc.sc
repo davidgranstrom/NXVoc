@@ -16,13 +16,13 @@ NXVoc {
 
     // internal use only
     *decoder {|freqs, amps, input, in_select=0, out_select=0|
-        var decoder, dec_even, dec_odd;
+        var decoder, even, odd;
         decoder = [ freqs, amps ].flopWith {|freq, amp| 
             amp * 10 * BPF.ar(input, freq, rq) 
         };
-        dec_even = decoder.select {|x,i| i.even };
-        dec_odd  = decoder.select {|x,i| i.odd  };
-        decoder  = Select.ar(out_select, [ decoder, dec_even, dec_odd ]);
+        even    = decoder.select {|x,i| i.even };
+        odd     = decoder.select {|x,i| i.odd  };
+        decoder = Select.ar(out_select, [ decoder, even, odd ]);
         ^decoder;
     }
 
@@ -37,9 +37,9 @@ NXVoc {
     }
 
     *vocoder {|freqs, amps, modulator, carrier, in_select=0, out_select=0|
-        var envs   = this.envelope_follower(freqs, modulator, in_select);
-        var decode = this.decoder(freqs, amps, carrier, out_select);
-        ^(decode * envs).sum * freqs.size.reciprocal.sqrt;
+        var envs    = this.envelope_follower(freqs, modulator, in_select);
+        var decoder = this.decoder(freqs, amps, carrier, out_select);
+        ^(decoder * envs).sum * freqs.size.reciprocal.sqrt;
     }
 
     *comb {|freqs, input, in_select=0, out_select=0|
