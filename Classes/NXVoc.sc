@@ -10,7 +10,7 @@ NXVoc {
         };
         even  = bands.select {|x,i| i.even };
         odd   = bands.select {|x,i| i.odd  };
-        bands = Select.ar(in_select, [ bands, even, odd ]);
+        bands = SelectX.ar(in_select, [ bands, even, odd ]);
         ^bands;
     }
 
@@ -22,7 +22,7 @@ NXVoc {
         };
         even    = decoder.select {|x,i| i.even };
         odd     = decoder.select {|x,i| i.odd  };
-        decoder = Select.ar(out_select, [ decoder, even, odd ]);
+        decoder = SelectX.ar(out_select, [ decoder, even, odd ]);
         ^decoder;
     }
 
@@ -32,7 +32,7 @@ NXVoc {
         bands = [ signal, amps ].flopWith {|sig, amp| sig * amp };
         even  = bands.select {|x,i| i.even };
         odd   = bands.select {|x,i| i.odd  };
-        bands = Select.ar(out_select, [ bands, even, odd ]);
+        bands = SelectX.ar(out_select, [ bands, even, odd ]);
         ^bands.sum * freqs.size.reciprocal.sqrt;
     }
 
@@ -47,7 +47,7 @@ NXVoc {
         bands = this.signal_input(freqs, input, in_select);
         even  = bands.select {|x,i| i.even };
         odd   = bands.select {|x,i| i.odd  };
-        bands = Select.ar(out_select, [ even, odd ]);
+        bands = SelectX.ar(out_select, [ even, odd ]);
         ^bands.sum * freqs.size.reciprocal.sqrt;
     }
 
